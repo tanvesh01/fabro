@@ -108,6 +108,23 @@ impl Client {
             client.register_provider(Arc::new(adapter)).await?;
         }
 
+        for provider in &crate::catalog::model_config().providers {
+            if client.providers.contains_key(&provider.id) {
+                return Err(SdkError::Configuration {
+                    message: format!(
+                        "Custom provider '{}' conflicts with an existing provider",
+                        provider.id
+                    ),
+                });
+            }
+
+            if let Ok(key) = std::env::var(&provider.api_key_env) {
+                let adapter = providers::OpenAiCompatibleAdapter::new(key, &provider.base_url)
+                    .with_name(provider.id.clone());
+                client.register_provider(Arc::new(adapter)).await?;
+            }
+        }
+
         debug!(
             providers = ?client.provider_names(),
             default = ?client.default_provider(),
@@ -131,8 +148,8 @@ impl Client {
         if self.default_provider.is_none() {
             self.default_provider = Some(name.clone());
         }
-        self.providers.insert(name.clone(), adapter);
         debug!(provider = %name, "Provider registered");
+        self.providers.insert(name, adapter);
         Ok(())
     }
 

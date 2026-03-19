@@ -1567,6 +1567,7 @@ dependencies = [
  "cli-table",
  "dialoguer",
  "dotenvy",
+ "fabro-config",
  "fabro-util",
  "futures",
  "http",
