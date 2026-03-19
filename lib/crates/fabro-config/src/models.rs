@@ -166,7 +166,7 @@ fn validate_nonempty(label: &str, value: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn validate_env_var_name(value: &str) -> anyhow::Result<()> {
+pub fn validate_env_var_name(value: &str) -> anyhow::Result<()> {
     if value.is_empty() {
         bail!("api_key_env cannot be empty");
     }
@@ -185,6 +185,13 @@ fn validate_env_var_name(value: &str) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[must_use]
+pub fn has_nonempty_env_var(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty())
 }
 
 #[cfg(test)]

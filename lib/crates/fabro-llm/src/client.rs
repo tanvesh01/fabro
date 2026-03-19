@@ -3,6 +3,7 @@ use crate::middleware::{Middleware, NextFn, NextStreamFn};
 use crate::provider::{ProviderAdapter, StreamEventStream};
 use crate::providers;
 use crate::types::{Request, Response};
+use fabro_config::models::has_nonempty_env_var;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::debug;
@@ -118,7 +119,9 @@ impl Client {
                 });
             }
 
-            if let Ok(key) = std::env::var(&provider.api_key_env) {
+            if has_nonempty_env_var(&provider.api_key_env) {
+                let key = std::env::var(&provider.api_key_env)
+                    .expect("checked env var is present and non-empty");
                 let adapter = providers::OpenAiCompatibleAdapter::new(key, &provider.base_url)
                     .with_name(provider.id.clone());
                 client.register_provider(Arc::new(adapter)).await?;

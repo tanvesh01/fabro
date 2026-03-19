@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn catalog_provider_strings_roundtrip_through_provider() {
-        for model in list_models(None) {
+        for model in BUILT_IN_MODELS.iter() {
             let parsed = Provider::from_str(&model.provider);
             assert!(
                 parsed.is_ok(),

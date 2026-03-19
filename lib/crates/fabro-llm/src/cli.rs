@@ -2,7 +2,6 @@ use std::io::{self, IsTerminal, Read, Write};
 
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Confirm, Input, Select};
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
@@ -14,9 +13,10 @@ use serde::Deserialize;
 use std::str::FromStr;
 
 use fabro_config::models::{
-    load_custom_models, save_custom_models, CustomModelConfig, CustomModelFeatures,
-    CustomModelLimits, CustomProviderConfig,
+    has_nonempty_env_var, load_custom_models, save_custom_models, validate_env_var_name,
+    CustomModelConfig, CustomModelFeatures, CustomModelLimits, CustomProviderConfig,
 };
+use fabro_util::interactive;
 use fabro_util::terminal::Styles;
 
 use crate::catalog;
@@ -1056,7 +1056,7 @@ fn add_models_wizard_sync() -> Result<()> {
         config.models.push(model);
         added += 1;
 
-        let add_more = prompt_confirm(
+        let add_more = interactive::confirm(
             &format!("Add another model for provider '{provider_id}'?"),
             false,
         )?;
@@ -1080,7 +1080,7 @@ fn select_or_create_provider(
         .collect();
     items.push("Create new provider".to_string());
 
-    let selection = prompt_select("Choose provider", &items, items.len().saturating_sub(1))?;
+    let selection = interactive::select("Choose provider", &items, items.len().saturating_sub(1))?;
 
     if selection < config.providers.len() {
         return Ok(config.providers[selection].id.clone());
@@ -1101,7 +1101,7 @@ fn select_or_create_provider(
 
 fn prompt_provider_id(config: &fabro_config::models::CustomModelsConfig) -> Result<String> {
     loop {
-        let provider_id = prompt_input("Provider id (e.g. my-kimi)")?;
+        let provider_id = interactive::input("Provider id (e.g. my-kimi)")?;
 
         if provider_id.is_empty() {
             eprintln!("Provider id cannot be empty.");
@@ -1127,7 +1127,7 @@ fn prompt_model(
     provider_id: &str,
 ) -> Result<CustomModelConfig> {
     let model_id = loop {
-        let value = prompt_input("Model id")?;
+        let value = interactive::input("Model id")?;
         if value.is_empty() {
             eprintln!("Model id cannot be empty.");
             continue;
@@ -1143,12 +1143,12 @@ fn prompt_model(
         break value;
     };
 
-    let display_name = prompt_input_with_default("Display name", &model_id)?;
-    let context_window = prompt_positive_i64("Context window", 128000)?;
+    let display_name = interactive::input_with_default("Display name", &model_id)?;
+    let context_window = interactive::positive_i64("Context window", 128000)?;
 
-    let tools = prompt_confirm("Supports tools?", true)?;
-    let vision = prompt_confirm("Supports vision?", false)?;
-    let reasoning = prompt_confirm("Supports reasoning?", false)?;
+    let tools = interactive::confirm("Supports tools?", true)?;
+    let vision = interactive::confirm("Supports vision?", false)?;
+    let reasoning = interactive::confirm("Supports reasoning?", false)?;
 
     Ok(CustomModelConfig {
         id: model_id,
@@ -1182,7 +1182,7 @@ fn remove_custom_model_sync(id: &str) -> Result<()> {
         bail!("Custom model '{}' not found", id);
     };
 
-    let confirmed = prompt_confirm(&format!("Remove custom model '{id}'?"), false)?;
+    let confirmed = interactive::confirm(&format!("Remove custom model '{id}'?"), false)?;
     if !confirmed {
         eprintln!("Canceled");
         return Ok(());
@@ -1193,7 +1193,7 @@ fn remove_custom_model_sync(id: &str) -> Result<()> {
 
     let provider_still_used = config.models.iter().any(|m| m.provider == provider_id);
     if !provider_still_used {
-        let remove_provider = prompt_confirm(
+        let remove_provider = interactive::confirm(
             &format!("Provider '{provider_id}' has no remaining models. Remove it too?"),
             true,
         )?;
@@ -1207,33 +1207,9 @@ fn remove_custom_model_sync(id: &str) -> Result<()> {
     Ok(())
 }
 
-fn prompt_confirm(prompt: &str, default: bool) -> Result<bool> {
-    Ok(Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt)
-        .default(default)
-        .interact_on(&Term::stderr())?)
-}
-
-fn prompt_input(prompt: &str) -> Result<String> {
-    Ok(Input::<String>::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt)
-        .interact_on(&Term::stderr())?
-        .trim()
-        .to_string())
-}
-
-fn prompt_input_with_default(prompt: &str, default: &str) -> Result<String> {
-    Ok(Input::<String>::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt)
-        .default(default.to_string())
-        .interact_on(&Term::stderr())?
-        .trim()
-        .to_string())
-}
-
 fn prompt_nonempty_input(prompt: &str) -> Result<String> {
     loop {
-        let value = prompt_input(prompt)?;
+        let value = interactive::input(prompt)?;
         if !value.is_empty() {
             return Ok(value);
         }
@@ -1241,32 +1217,11 @@ fn prompt_nonempty_input(prompt: &str) -> Result<String> {
     }
 }
 
-fn prompt_positive_i64(prompt: &str, default: i64) -> Result<i64> {
-    loop {
-        let value = Input::<i64>::with_theme(&ColorfulTheme::default())
-            .with_prompt(prompt)
-            .default(default)
-            .interact_on(&Term::stderr())?;
-        if value > 0 {
-            return Ok(value);
-        }
-        eprintln!("{prompt} must be greater than 0.");
-    }
-}
-
-fn prompt_select(prompt: &str, items: &[String], default: usize) -> Result<usize> {
-    Ok(Select::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt)
-        .items(items)
-        .default(default)
-        .interact_on(&Term::stderr())?)
-}
-
 fn prompt_env_var_name() -> Result<String> {
     loop {
-        let value = prompt_input("API key env var")?;
-        if is_valid_env_var_name(&value) {
-            if !is_set_and_nonempty_env_var(&value) {
+        let value = interactive::input("API key env var")?;
+        if validate_env_var_name(&value).is_ok() {
+            if !has_nonempty_env_var(&value) {
                 eprintln!(
                     "Warning: env var '{value}' is not set or empty in this shell; set it before using this provider."
                 );
@@ -1275,26 +1230,6 @@ fn prompt_env_var_name() -> Result<String> {
         }
         eprintln!("Invalid env var. Use A-Z, 0-9, and _; first char must be A-Z or _.");
     }
-}
-
-fn is_valid_env_var_name(value: &str) -> bool {
-    if value.is_empty() {
-        return false;
-    }
-    let mut chars = value.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !first.is_ascii_uppercase() && first != '_' {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-}
-
-fn is_set_and_nonempty_env_var(name: &str) -> bool {
-    std::env::var(name)
-        .ok()
-        .is_some_and(|value| !value.trim().is_empty())
 }
 
 #[cfg(test)]

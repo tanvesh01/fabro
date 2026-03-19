@@ -8,8 +8,9 @@ use anyhow::{bail, Context, Result};
 use axum::extract::Query;
 use axum::response::Html;
 use axum::routing::get;
-use dialoguer::{Confirm, MultiSelect, Password, Select};
+use dialoguer::{MultiSelect, Password};
 use fabro_llm::provider::Provider;
+use fabro_util::interactive;
 use fabro_util::terminal::Styles;
 use rand::Rng;
 use tokio::net::TcpListener;
@@ -303,21 +304,12 @@ fn openai_oauth_env_pairs(
 // ---------------------------------------------------------------------------
 
 fn prompt_confirm(prompt: &str, default: bool) -> Result<bool> {
-    Ok(
-        Confirm::with_theme(&dialoguer::theme::ColorfulTheme::default())
-            .with_prompt(prompt)
-            .default(default)
-            .interact_on(&dialoguer::console::Term::stderr())?,
-    )
+    interactive::confirm(prompt, default)
 }
 
 #[cfg(feature = "server")]
 fn prompt_input(prompt: &str) -> Result<String> {
-    Ok(
-        dialoguer::Input::with_theme(&dialoguer::theme::ColorfulTheme::default())
-            .with_prompt(prompt)
-            .interact_on(&dialoguer::console::Term::stderr())?,
-    )
+    interactive::input(prompt)
 }
 
 fn prompt_password(prompt: &str) -> Result<String> {
@@ -329,12 +321,7 @@ fn prompt_password(prompt: &str) -> Result<String> {
 }
 
 fn prompt_select(prompt: &str, items: &[String]) -> Result<usize> {
-    Ok(
-        Select::with_theme(&dialoguer::theme::ColorfulTheme::default())
-            .with_prompt(prompt)
-            .items(items)
-            .interact_on(&dialoguer::console::Term::stderr())?,
-    )
+    interactive::select(prompt, items, 0)
 }
 
 fn prompt_multiselect(prompt: &str, items: &[String]) -> Result<Vec<usize>> {

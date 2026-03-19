@@ -1719,6 +1719,7 @@ dependencies = [
  "base64",
  "chrono",
  "console 0.15.11",
+ "dialoguer",
  "dirs",
  "exec",
  "fork",

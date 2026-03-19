@@ -1,4 +1,5 @@
 pub mod check_report;
+pub mod interactive;
 pub mod path;
 pub mod redact;
 pub mod run_log;
