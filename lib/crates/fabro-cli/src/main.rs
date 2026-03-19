@@ -96,6 +96,7 @@ enum Command {
     /// Show detailed information about a workflow run
     Inspect(fabro_workflows::cli::inspect::InspectArgs),
     /// List and test LLM models
+    #[command(visible_alias = "models")]
     Model {
         #[command(subcommand)]
         command: Option<fabro_llm::cli::ModelsCommand>,
@@ -430,6 +431,8 @@ async fn main_inner() -> (String, Result<()>) {
         Command::Model { command } => match command {
             Some(fabro_llm::cli::ModelsCommand::List { .. }) => "model list",
             Some(fabro_llm::cli::ModelsCommand::Test { .. }) => "model test",
+            Some(fabro_llm::cli::ModelsCommand::Add) => "model add",
+            Some(fabro_llm::cli::ModelsCommand::Remove { .. }) => "model remove",
             None => "model",
         },
         #[cfg(feature = "server")]

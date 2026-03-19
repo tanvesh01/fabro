@@ -2,7 +2,13 @@ macro_rules! trycmd_subcommand {
     ($name:ident, $dir:expr) => {
         #[test]
         fn $name() {
+            let temp = tempfile::tempdir().unwrap();
             trycmd::TestCases::new()
+                .env("HOME", temp.path().to_string_lossy().into_owned())
+                .env(
+                    "XDG_CONFIG_HOME",
+                    temp.path().join("xdg").to_string_lossy().into_owned(),
+                )
                 .case(concat!("tests/cmd/", $dir, "/*.trycmd"))
                 .case(concat!("tests/cmd/", $dir, "/*.toml"));
         }

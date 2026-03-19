@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod hook;
 pub mod mcp;
+pub mod models;
 pub mod project;
 pub mod run;
 pub mod sandbox;

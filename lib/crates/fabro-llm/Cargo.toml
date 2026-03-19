@@ -31,6 +31,7 @@ cli-table.workspace = true
 clap.workspace = true
 dialoguer.workspace = true
 tracing.workspace = true
+fabro-config = { path = "../fabro-config" }
 fabro-util = { path = "../fabro-util" }
 
 [dev-dependencies]

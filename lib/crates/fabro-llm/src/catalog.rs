@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::LazyLock;
 
+use crate::provider::Provider;
 use crate::types::ModelInfo;
+use fabro_config::models::{load_custom_models, CustomModelConfig, CustomModelsConfig};
 
 /// Built-in model catalog loaded from catalog.json (Section 2.9).
 /// The catalog is advisory, not restrictive -- unknown model strings pass through.
@@ -9,10 +12,18 @@ static BUILT_IN_MODELS: LazyLock<Vec<ModelInfo>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("catalog.json")).expect("embedded catalog.json must be valid")
 });
 
+static MODELS: LazyLock<Vec<ModelInfo>> = LazyLock::new(|| {
+    let custom =
+        load_and_validate_custom_models().expect("custom models config must be valid when present");
+    let mut models = BUILT_IN_MODELS.clone();
+    models.extend(custom.models.iter().map(custom_model_to_model_info));
+    models
+});
+
 /// Get model info by model ID (Section 2.9).
 #[must_use]
 pub fn get_model_info(model_id: &str) -> Option<ModelInfo> {
-    BUILT_IN_MODELS
+    MODELS
         .iter()
         .find(|m| m.id == model_id || m.aliases.iter().any(|a| a == model_id))
         .cloned()
@@ -23,7 +34,7 @@ pub fn get_model_info(model_id: &str) -> Option<ModelInfo> {
 /// Returns `None` if the provider has no models or none marked as default.
 #[must_use]
 pub fn default_model_for_provider(provider: &str) -> Option<ModelInfo> {
-    BUILT_IN_MODELS
+    MODELS
         .iter()
         .find(|m| m.provider == provider && m.default)
         .cloned()
@@ -32,7 +43,7 @@ pub fn default_model_for_provider(provider: &str) -> Option<ModelInfo> {
 /// Get the overall default model (the first model marked `default` in catalog.json).
 #[must_use]
 pub fn default_model() -> ModelInfo {
-    BUILT_IN_MODELS
+    MODELS
         .iter()
         .find(|m| m.default)
         .cloned()
@@ -43,14 +54,8 @@ pub fn default_model() -> ModelInfo {
 #[must_use]
 pub fn list_models(provider: Option<&str>) -> Vec<ModelInfo> {
     provider.map_or_else(
-        || BUILT_IN_MODELS.clone(),
-        |p| {
-            BUILT_IN_MODELS
-                .iter()
-                .filter(|m| m.provider == p)
-                .cloned()
-                .collect()
-        },
+        || MODELS.clone(),
+        |p| MODELS.iter().filter(|m| m.provider == p).cloned().collect(),
     )
 }
 
@@ -122,6 +127,101 @@ pub fn build_fallback_chain(
         .collect()
 }
 
+fn load_and_validate_custom_models() -> anyhow::Result<CustomModelsConfig> {
+    let custom = load_custom_models(None)?;
+    validate_custom_model_collisions(&custom)?;
+    Ok(custom)
+}
+
+pub(crate) fn model_config() -> &'static CustomModelsConfig {
+    static MODEL_CONFIG: LazyLock<CustomModelsConfig> = LazyLock::new(|| {
+        load_and_validate_custom_models().expect("custom models config must be valid when present")
+    });
+
+    &MODEL_CONFIG
+}
+
+fn validate_custom_model_collisions(custom: &CustomModelsConfig) -> anyhow::Result<()> {
+    for provider in &custom.providers {
+        if Provider::from_str(&provider.id).is_ok() {
+            anyhow::bail!(
+                "Custom provider '{}' conflicts with a built-in provider name",
+                provider.id
+            );
+        }
+    }
+
+    for model in &custom.models {
+        let conflicts_builtin_id = BUILT_IN_MODELS.iter().any(|m| m.id == model.id);
+        if conflicts_builtin_id {
+            anyhow::bail!(
+                "Custom model '{}' conflicts with a built-in model id",
+                model.id
+            );
+        }
+
+        if BUILT_IN_MODELS
+            .iter()
+            .any(|m| m.aliases.iter().any(|alias| alias == &model.id))
+        {
+            anyhow::bail!(
+                "Custom model '{}' conflicts with a built-in model alias",
+                model.id
+            );
+        }
+
+        for alias in &model.aliases {
+            if BUILT_IN_MODELS.iter().any(|m| m.id == *alias) {
+                anyhow::bail!(
+                    "Custom alias '{}' for model '{}' conflicts with a built-in model id",
+                    alias,
+                    model.id
+                );
+            }
+            if BUILT_IN_MODELS.iter().any(|m| {
+                m.aliases
+                    .iter()
+                    .any(|built_in_alias| built_in_alias == alias)
+            }) {
+                anyhow::bail!(
+                    "Custom alias '{}' for model '{}' conflicts with a built-in model alias",
+                    alias,
+                    model.id
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn custom_model_to_model_info(model: &CustomModelConfig) -> ModelInfo {
+    ModelInfo {
+        id: model.id.clone(),
+        provider: model.provider.clone(),
+        family: "custom".to_string(),
+        display_name: model.display_name.clone(),
+        limits: crate::types::ModelLimits {
+            context_window: model.limits.context_window,
+            max_output: model.limits.max_output,
+        },
+        training: None,
+        features: crate::types::ModelFeatures {
+            tools: model.features.tools,
+            vision: model.features.vision,
+            reasoning: model.features.reasoning,
+        },
+        costs: crate::types::ModelCosts {
+            input_cost_per_mtok: None,
+            output_cost_per_mtok: None,
+            cache_input_cost_per_mtok: None,
+        },
+        estimated_output_tps: None,
+        aliases: model.aliases.clone(),
+        default: false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,7 +281,7 @@ mod tests {
 
     #[test]
     fn catalog_provider_strings_roundtrip_through_provider() {
-        for model in list_models(None) {
+        for model in BUILT_IN_MODELS.iter() {
             let parsed = Provider::from_str(&model.provider);
             assert!(
                 parsed.is_ok(),
